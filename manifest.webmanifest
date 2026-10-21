@@ -1,0 +1,16 @@
+{
+  "name": "R2R Money — Risks to Reward",
+  "short_name": "R2R Money",
+  "description": "See where your money goes, from your own bank alerts.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#13283F",
+  "theme_color": "#13283F",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
