@@ -7,8 +7,8 @@
 <meta name="description" content="See where your money goes, from your own bank alerts.">
 <meta name="theme-color" content="#13283F">
 <link rel="manifest" href="manifest.webmanifest">
-<link rel="icon" href="icons/icon-192.png" type="image/png">
-<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="icon" href="icon-192.png" type="image/png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -160,13 +160,35 @@ input{font:inherit;color:inherit}
 /* ---------- accounts ---------- */
 .acc{display:grid;grid-template-columns:1fr auto;gap:2px 12px;padding:13px 0;border-bottom:1px solid var(--line)}
 .acc:first-child{border-top:1px solid var(--line)}
-.acc-name{font-weight:600}
-.acc-sub{font-size:12.5px;color:var(--ink-soft)}
-.acc-amt{grid-row:1 / 3;align-self:center;font-weight:600;text-align:right}
+.acc-name{grid-column:1;grid-row:1;font-weight:600}
+.acc-sub{grid-column:1;grid-row:2;font-size:12.5px;color:var(--ink-soft)}
+.acc-amt{grid-column:2;grid-row:1 / 3;align-self:center;font-weight:600;text-align:right}
 .status{display:inline-block;font-size:12px;font-weight:600;padding:2px 8px;border-radius:6px;margin-top:4px}
 .status.ok{background:var(--teal-soft);color:var(--teal)}
 .status.check{background:var(--brick-soft);color:var(--brick)}
 .status.todo{background:var(--marigold-soft);color:#8A5A12}
+
+/* ---------- statements ---------- */
+.stmt-actions{display:flex;flex-wrap:wrap;gap:8px;margin:4px 0 12px}
+.stmt-actions .btn{height:42px;font-size:14px}
+.stmt{display:grid;grid-template-columns:1fr auto;gap:2px 12px;align-items:center;width:100%;text-align:left;padding:12px 0;border-bottom:1px solid var(--line)}
+.stmt:first-child{border-top:1px solid var(--line)}
+.stmt .acc-name{grid-column:1;grid-row:1}
+.stmt-file{grid-column:1;grid-row:2;font-size:12.5px;color:var(--ink-soft);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.stmt .status{grid-row:1 / 3;grid-column:2}
+.pw-field{width:100%;height:50px;border-radius:14px;border:1px solid var(--line);padding:0 14px;font-size:16px;margin:4px 0 8px;background:var(--paper)}
+.check-row{display:flex;gap:10px;align-items:flex-start;font-size:14px;margin:6px 0 14px}
+.check-row input{width:20px;height:20px;margin:1px 0 0;accent-color:var(--ink)}
+.err-text{color:var(--brick);font-size:13.5px;min-height:19px;margin:0 0 6px}
+.preview-list{list-style:none;margin:0 0 16px;padding:0;max-height:38dvh;overflow:auto;border-top:1px solid var(--line)}
+.preview-list li{display:flex;justify-content:space-between;gap:12px;padding:8px 0;border-bottom:1px solid var(--line);font-size:13.5px}
+.preview-list li span:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.preview-list .d{color:var(--ink-soft);margin-right:8px;font-variant-numeric:tabular-nums}
+.callout{border-radius:12px;padding:10px 12px;font-size:13.5px;margin:0 0 14px}
+.callout.ok{background:var(--teal-soft);color:#0B5B52}
+.callout.warn{background:var(--marigold-soft);color:#6B4510}
+.working{display:flex;align-items:center;gap:10px;color:var(--ink-soft);padding:16px 0}
+.working i{width:18px;height:18px;border-radius:50%;border:2.5px solid var(--line);border-top-color:var(--ink);animation:spin .8s linear infinite}
 
 /* ---------- sheets / dialogs ---------- */
 .scrim{position:fixed;inset:0;background:rgba(19,40,63,.45);z-index:40;opacity:0;transition:opacity .2s}
@@ -188,7 +210,7 @@ input{font:inherit;color:inherit}
 .btn-ghost{border:1px solid var(--line);background:var(--paper)}
 .btn-danger{color:var(--brick);border:1px solid var(--brick-soft)}
 .btn-block{width:100%}
-.toast{position:fixed;left:50%;bottom:calc(var(--nav-h) + var(--safe-b) + 14px);transform:translate(-50%,20px);background:var(--ink);color:#fff;
+.toast{position:fixed;left:50%;top:calc(var(--safe-t) + 14px);transform:translate(-50%,-20px);background:var(--ink);color:#fff;
   padding:11px 16px;border-radius:12px;font-size:14px;z-index:60;opacity:0;transition:.25s;max-width:calc(100% - 32px);pointer-events:none}
 .toast.show{opacity:1;transform:translate(-50%,0)}
 .banner{background:var(--marigold-soft);color:#6B4510;border-radius:12px;padding:10px 14px;font-size:13.5px;margin-bottom:14px;display:flex;gap:10px;align-items:center;justify-content:space-between}
@@ -602,7 +624,136 @@ function viewAccounts(el){
         </div>`; }).join('')}</div>`
       : `<p class="empty"><b>No statements yet</b>When a card statement email arrives, it's checked here automatically.</p>`}
     </section>
+    ${statementsSection()}
   </div></div>`;
+}
+function statementsSection(){
+  const list = S.stmts;
+  return `<section class="section">
+    <h2>Read statement PDFs</h2>
+    <p class="sub">Adds every transaction from a bank or card statement, including ones that never sent an alert. The PDF is unlocked on this phone; its password never leaves it.</p>
+    <div class="stmt-actions">
+      ${S.demo ? '' : `<button class="btn btn-primary" data-act="find-stmts">${list ? 'Check Gmail again' : 'Find statements in Gmail'}</button>`}
+      <label class="btn btn-ghost" for="pdf-pick" style="cursor:pointer">Open a PDF from this phone</label>
+      <input id="pdf-pick" type="file" accept="application/pdf,.pdf" hidden>
+    </div>
+    ${S.stmtsLoading ? '<div class="working"><i></i>Looking for statement emails…</div>' : ''}
+    ${list && !S.stmtsLoading ? (list.length ? `<div>${list.map((x,i) => `<button class="stmt" data-act="stmt" data-i="${i}">
+        <span class="acc-name">${esc(x.bank || 'Statement')}<span class="muted" style="font-weight:400">, ${new Date(x.date+'T00:00').toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'numeric'})}</span></span>
+        <span class="status ${x.imported ? 'ok' : 'todo'}">${x.imported ? 'Added' : 'Read it'}</span>
+        <span class="stmt-file">${esc(x.file)}</span>
+      </button>`).join('')}</div>` : `<p class="empty"><b>No statement PDFs found</b>Statements emailed in the last 13 months appear here. You can also open a PDF saved on this phone.</p>`) : ''}
+  </section>`;
+}
+
+/* =================== statements =================== */
+const PW_KEY = 'r2r.pw';
+function savedPw(bank){ return (store.get(PW_KEY) || {})[bank || 'any']; }
+function savePw(bank, pw){ const m = store.get(PW_KEY) || {}; m[bank || 'any'] = pw; store.set(PW_KEY, m); }
+let pdfjsReady = null;
+function loadPdfjs(){
+  if (pdfjsReady) return pdfjsReady;
+  pdfjsReady = new Promise((res, rej) => {
+    const add = (src) => new Promise((ok, bad) => { const sc = document.createElement('script'); sc.src = src; sc.onload = ok; sc.onerror = () => bad(new Error('The PDF reader could not load. Check your internet connection once, then it works offline.')); document.head.appendChild(sc); });
+    add('pdf.min.js').then(() => add('statement.js')).then(() => {
+      window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'pdf.worker.min.js'; res(window.pdfjsLib);
+    }).catch(e => { pdfjsReady = null; rej(e); });
+  });
+  return pdfjsReady;
+}
+async function apiPost(body){
+  if (S.demo) return demoImport(body);
+  const res = await fetch(S.conn.u, { method:'POST', body: JSON.stringify(Object.assign({ k:S.conn.k }, body)), redirect:'follow' });
+  if (!res.ok) throw new Error('Your sheet could not be reached (error ' + res.status + '). Try again in a moment.');
+  const json = await res.json().catch(() => { throw new Error('Your sheet sent back something unexpected. Re-deploy the web app from the sheet and try again.'); });
+  if (!json.ok) throw new Error(json.error || 'Your sheet returned an error.');
+  return json;
+}
+async function findStatements(){
+  S.stmtsLoading = true; render();
+  try { const r = await api({ action:'stmts' }); S.stmts = r.statements || []; }
+  catch (e) { toast(e.message); }
+  finally { S.stmtsLoading = false; render(); }
+}
+function working(msg){ openSheet(`<h3>Reading statement</h3><div class="working"><i></i>${esc(msg)}</div>`); }
+async function startStatement(src){
+  // src: {bank, file, id, part} from Gmail, or {bank:'', file, bytes} from the phone
+  try {
+    working('Opening the PDF…');
+    await loadPdfjs();
+    if (!src.bytes){
+      const r = await api({ action:'att', id:src.id, part:src.part });
+      const bin = atob(r.b64); const u = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
+      src.bytes = u;
+    }
+    await tryUnlock(src, savedPw(src.bank) || savedPw('any') || '', false);
+  } catch (e) { closeSheet(); toast(e.message || 'That PDF could not be read.'); }
+}
+async function tryUnlock(src, pw, fromPrompt){
+  try {
+    working('Reading the transactions…');
+    const res = await window.R2RStatement.readStatement(window.pdfjsLib, src.bytes.slice(0), pw || undefined);
+    if (fromPrompt && src.remember) savePw(src.bank || 'any', pw);
+    showPreview(src, res);
+  } catch (e) {
+    if (e && e.name === 'PasswordException') return askPassword(src, fromPrompt && e.code === 2);
+    closeSheet(); toast('That PDF could not be read. ' + (e && e.message ? e.message : ''));
+  }
+}
+function askPassword(src, wrong){
+  openSheet(`<h3>Statement password</h3>
+    <p class="muted" style="margin:6px 0 12px">${esc(src.bank || 'Your bank')} protects this PDF. It's usually built from your name, date of birth or card number, for example the first 4 letters of your name in capitals plus DDMM. The statement email normally explains the format.</p>
+    <form id="pw-form">
+      <label class="sr" for="pw">Password</label>
+      <input class="pw-field" id="pw" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="PDF password">
+      <p class="err-text" role="alert">${wrong ? "That password didn't open the PDF. Check capitals and try again." : ''}</p>
+      <label class="check-row"><input type="checkbox" id="pw-remember" checked><span>Remember for ${esc(src.bank || 'this bank')} on this phone only</span></label>
+      <button class="btn btn-primary btn-block" type="submit">Unlock and read</button>
+    </form>`, sh => {
+      const f = sh.querySelector('#pw'); setTimeout(() => f.focus(), 300);
+      sh.querySelector('#pw-form').addEventListener('submit', ev => {
+        ev.preventDefault(); src.remember = sh.querySelector('#pw-remember').checked; tryUnlock(src, f.value, true);
+      });
+    });
+}
+function showPreview(src, res){
+  if (!res.rows.length){
+    openSheet(`<h3>No transactions found</h3><p class="muted">The PDF opened, but its layout wasn't recognised. Send this statement's bank name to Risks to Reward so support can be added.</p>
+      <button class="btn btn-ghost btn-block" data-act="close-sheet">Close</button>`);
+    return;
+  }
+  src.result = res; S.pending = src;
+  const label = (src.bank || 'Statement') + (res.last4 ? ' ••' + res.last4 : '');
+  const check = res.check === 'balanced' ? `<div class="callout ok">Totals check out: opening balance plus money in, minus money out, equals the closing balance on the statement.</div>`
+    : res.check === 'mismatch' ? `<div class="callout warn">Some lines may have been missed: the totals don't add up to the closing balance. Review the list before adding.</div>` : '';
+  openSheet(`<h3>${esc(label)}</h3>
+    <p class="muted" style="margin:4px 0 12px">${res.rows.length} transactions found, ${rupee(res.debits)} out and ${rupee(res.credits)} in.</p>
+    ${check}
+    <ul class="preview-list">${res.rows.map(r => `<li><span><span class="d">${new Date(r.d+'T00:00').toLocaleDateString('en-IN',{day:'numeric',month:'short'})}</span>${esc(pretty(r.m))}</span><span class="money ${r.dir==='C'?'in':''}">${r.dir==='C'?'+':''}${rupee(r.a, true)}</span></li>`).join('')}</ul>
+    <button class="btn btn-primary btn-block" data-act="import-stmt">Add to my tracker</button>
+    <p class="muted" style="font-size:12.5px;margin:8px 0 0">Spends already recorded from alerts are skipped, so nothing is counted twice.</p>`);
+}
+async function importPending(){
+  const src = S.pending; if (!src) return;
+  const btn = document.querySelector('[data-act="import-stmt"]'); if (btn){ btn.disabled = true; btn.textContent = 'Adding…'; }
+  try {
+    const out = await apiPost({ action:'addtxns', id:src.id || '', part:src.part || '', file:src.file || '', bank:src.bank || '',
+      last4:src.result.last4, kind:src.result.kind, head:'', rows:src.result.rows });
+    S.data = out; if (!S.demo) store.set(LS.data, out);
+    if (S.stmts && src.id) S.stmts.forEach(x => { if (x.id === src.id && x.part === src.part) x.imported = true; });
+    S.pending = null; closeSheet(); render();
+    toast(out.already ? 'This statement was already added.' : `Added ${out.added}. ${out.skipped ? out.skipped + ' were already there from alerts.' : ''}`);
+  } catch (e) { if (btn){ btn.disabled = false; btn.textContent = 'Add to my tracker'; } toast(e.message); }
+}
+function demoImport(body){
+  const types = typeMap(); let added = 0, skipped = 0;
+  body.rows.forEach((r, i) => {
+    if (S.data.txns.some(t => Math.abs(t.a - r.a) < .01 && t.d.slice(0,10) === r.d)) { skipped++; return; }
+    S.data.txns.push({ id:'pdf'+Date.now()+i, d:r.d+'T12:00', m:r.m, a:r.a, c: r.dir==='C' && /payment|thank you/i.test(r.raw) ? 'Card Bill Payment' : (r.dir==='C' ? 'Income' : 'Uncategorised'),
+      dir:r.dir, acc:(body.bank||'Statement') + (body.last4 ? ' ••'+body.last4 : ''), bank:body.bank||'Statement', mode:body.kind==='card'?'Credit Card':'Bank Account', src:'Statement PDF' });
+    added++;
+  });
+  return Promise.resolve(Object.assign({}, S.data, { added, skipped }));
 }
 
 /* =================== sheets =================== */
@@ -661,6 +812,7 @@ function openSettings(){
     <button class="btn btn-primary btn-block" data-act="sync-close">Check Gmail now</button>
     <p class="muted" style="font-size:12.5px;margin:8px 0 18px">Your sheet also checks Gmail by itself every 6 hours. A manual check can take up to a few minutes.</p>
     <button class="btn btn-ghost btn-block" data-act="install-help">Add to home screen</button>
+    ${store.get(PW_KEY) ? '<button class="btn btn-ghost btn-block" style="margin-top:10px" data-act="forget-pw">Forget saved statement passwords</button>' : ''}
     <button class="btn btn-danger btn-block" style="margin-top:10px" data-act="disconnect">${S.demo ? 'Leave sample data' : 'Disconnect this phone'}</button>
     <p class="muted" style="font-size:12px;margin:18px 0 0">${esc(d.brand?.name || 'Risks to Reward')}. ${esc(d.brand?.tagline || '')}<br>Your data stays in your own Google account. This app has no server of its own. For budgeting and education only, not investment advice.</p>`);
 }
@@ -678,7 +830,7 @@ function renderWelcome(){
   const strip = ['#E2A03F','#6E9F48','#C2577A','#3E7CB1','#7A5BA8','#2F9C95','#A9B4BE'];
   const w = [30,18,14,12,10,9,7];
   root.innerHTML = `<main class="welcome"><div class="welcome-inner">
-    <div class="brandmark"><img src="icons/icon-192.png" alt="">Risks to Reward</div>
+    <div class="brandmark"><img src="icon-192.png" alt="">Risks to Reward</div>
     <h1>See where your money goes.</h1>
     <div class="demo-ribbon" aria-hidden="true">${strip.map((c,i) => `<i style="flex:${w[i]};background:${c}"></i>`).join('')}</div>
     <p>Your bank alerts, sorted into categories automatically, from the Google Sheet you set up.</p>
@@ -720,15 +872,27 @@ document.addEventListener('click', e => {
   else if (a === 'open') openTxn(b.dataset.id);
   else if (a === 'setcat') setCategory(b.dataset.id, b.dataset.cat);
   else if (a === 'close-sheet') closeSheet();
+  else if (a === 'find-stmts') findStatements();
+  else if (a === 'stmt'){ const x = S.stmts[+b.dataset.i]; startStatement({ bank:x.bank, file:x.file, id:x.id, part:x.part }); }
+  else if (a === 'import-stmt') importPending();
+  else if (a === 'forget-pw'){ store.del(PW_KEY); closeSheet(); toast('Saved statement passwords removed from this phone.'); }
   else if (a === 'install-help') openInstallHelp();
   else if (a === 'install'){ S.installPrompt.prompt(); S.installPrompt = null; closeSheet(); }
   else if (a === 'demo'){ S.demo = true; store.set(LS.demo, true); S.data = makeDemo(); S._grown = false; render(); }
   else if (a === 'leave-demo' || a === 'disconnect'){
     if (a === 'disconnect' && !S.demo && !confirm('Disconnect this phone? You can reconnect any time with your code.')) return;
-    closeSheet(true); S.demo = false; S.conn = null; S.data = null; store.del(LS.conn); store.del(LS.data); store.del(LS.demo); render();
+    closeSheet(true); S.demo = false; S.conn = null; S.data = null; store.del(LS.conn); store.del(LS.data); store.del(LS.demo); if (a === 'disconnect') store.del(PW_KEY); S.stmts = null; render();
   }
 });
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closeSheet(); });
+document.addEventListener('change', async e => {
+  if (e.target.id !== 'pdf-pick' || !e.target.files || !e.target.files[0]) return;
+  const f = e.target.files[0]; e.target.value = '';
+  const bytes = new Uint8Array(await f.arrayBuffer());
+  const guess = (f.name.match(/hdfc|icici|sbi|axis|kotak|idfc|indusind|yes|rbl|amex|hsbc|citi|federal|au/i) || [''])[0];
+  const names = { hdfc:'HDFC Bank', icici:'ICICI Bank', sbi:'SBI Card', axis:'Axis Bank', kotak:'Kotak', idfc:'IDFC FIRST Bank', indusind:'IndusInd Bank', yes:'Yes Bank', rbl:'RBL Bank', amex:'American Express', hsbc:'HSBC', citi:'Citi', federal:'Federal Bank', au:'AU Bank' };
+  startStatement({ bank: names[guess.toLowerCase()] || '', file: f.name, bytes });
+});
 window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); S.installPrompt = e; });
 
 /* =================== demo data =================== */

@@ -1,7 +1,7 @@
 // R2R Money service worker: keeps the app shell available offline.
 // Expense data is never cached here — it lives in the user's own browser storage.
-const CACHE = 'r2r-money-v1';
-const SHELL = ['./', 'index.html', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png'];
+const CACHE = 'r2r-money-v3';
+const SHELL = ['./', 'index.html', 'statement.js', 'pdf.min.js', 'pdf.worker.min.js', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png', 'apple-touch-icon.png'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting()));
