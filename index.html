@@ -229,6 +229,11 @@ input{font:inherit;color:inherit}
 .details dt{color:var(--ink-soft)} .details dd{margin:0;text-align:right}
 .cat-pick{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px}
 .cat-pick button{display:flex;align-items:center;gap:8px;text-align:left;border:1px solid var(--line);border-radius:12px;padding:10px;font-size:13.5px;font-weight:500}
+.cat-pick .new-cat{border-style:dashed;color:var(--teal);font-weight:600;justify-content:center}
+.cat-types{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.cat-types button{display:flex;flex-direction:column;align-items:flex-start;gap:2px;text-align:left;border:1px solid var(--line);border-radius:12px;padding:10px 11px;background:var(--paper)}
+.cat-types button span{font-size:12px;color:var(--ink-soft)}
+.cat-types button[aria-pressed="true"]{border-color:var(--ink);box-shadow:inset 0 0 0 1px var(--ink)}
 .cat-pick button[aria-pressed="true"]{border-color:var(--ink);box-shadow:inset 0 0 0 1px var(--ink);font-weight:600}
 .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;height:48px;padding:0 18px;border-radius:14px;font-weight:600;font-size:15px}
 .btn-primary{background:var(--ink);color:#fff}
@@ -326,7 +331,9 @@ function ago(iso){
 }
 
 /* =================== data model =================== */
-function typeMap(){ const m = {}; (S.data?.categories || []).forEach(c => m[c.n] = c.t); return m; }
+const isRealCat = c => c && c.n && c.n.length <= 60 && !/^add your own categories/i.test(c.n);
+function catList(){ return (S.data?.categories || []).filter(isRealCat); }
+function typeMap(){ const m = {}; catList().forEach(c => m[c.n] = c.t); return m; }
 function budgetMap(){ const m = {}; (S.data?.categories || []).forEach(c => m[c.n] = c.b); return m; }
 function txnsIn(k){ return (S.data?.txns || []).filter(t => t.d.slice(0,7) === k); }
 function summarize(k){
@@ -959,7 +966,7 @@ function closeSheet(now){
 }
 function openTxn(id){
   const t = (S.data?.txns || []).find(x => x.id === id); if (!t) return;
-  const cats = (S.data?.categories || []);
+  const cats = catList();
   const dt = new Date(t.d);
   openSheet(`
     <h3>${esc(pretty(t.m))}</h3>
@@ -972,6 +979,7 @@ function openTxn(id){
     <p style="font-weight:600;margin:0 0 8px">Category</p>
     <div class="cat-pick" role="group" aria-label="Choose a category">
       ${cats.map(c => `<button data-act="setcat" data-id="${esc(t.id)}" data-cat="${esc(c.n)}" aria-pressed="${c.n===t.c}"><i class="dot" style="background:${catColor(c.n)}"></i>${esc(c.n)}</button>`).join('')}
+      <button class="new-cat" data-act="newcat" data-id="${esc(t.id)}">+ New category</button>
     </div>
     <p class="muted" style="font-size:12.5px;margin:12px 0 0">Changing it also teaches the tracker: future spends at ${esc(pretty(t.m))} get the same category.</p>`);
 }
@@ -984,6 +992,47 @@ async function setCategory(id, cat){
     toast(`Moved to ${cat}` + (data.updated ? `. ${data.updated} more ${t.m} spend${data.updated===1?'':'s'} updated.` : '.'));
   } catch (e) { t.c = before; render(); toast(e.message); }
 }
+const CAT_TYPES = [['Expense','Counts as spending'],['Investment','Money you invest'],['Income','Money coming in'],['Transfer','Not counted, e.g. own accounts']];
+function newCategory(txnId){
+  openSheet(`<h3>New category</h3>
+    <form id="cat-form" style="margin-top:10px">
+      <label for="cat-name" style="font-weight:600;font-size:14px">Name</label>
+      <input class="pw-field" id="cat-name" maxlength="40" autocomplete="off" placeholder="e.g. Pet Care, Kids' activities, Gold">
+      <p style="font-weight:600;font-size:14px;margin:8px 0 6px">How it counts</p>
+      <div class="cat-types" role="group" aria-label="How it counts">
+        ${CAT_TYPES.map(([t,h], i) => `<button type="button" data-act="ctype" data-t="${t}" aria-pressed="${i===0}"><b>${t}</b><span>${h}</span></button>`).join('')}
+      </div>
+      <label for="cat-budget" style="font-weight:600;font-size:14px;display:block;margin-top:12px">Monthly budget <span class="muted" style="font-weight:400">(optional)</span></label>
+      <input class="pw-field" id="cat-budget" inputmode="numeric" placeholder="₹ 0">
+      <p class="err-text" role="alert"></p>
+      <button class="btn btn-primary btn-block" type="submit">${txnId ? 'Create and use for this spend' : 'Create category'}</button>
+    </form>`, sh => {
+      const f = sh.querySelector('#cat-name'); setTimeout(() => f.focus(), 300);
+      sh.querySelector('#cat-form').addEventListener('submit', async ev => {
+        ev.preventDefault();
+        const err = sh.querySelector('.err-text'), btn = sh.querySelector('button[type=submit]');
+        const name = f.value.replace(/\s+/g, ' ').trim();
+        const type = (sh.querySelector('.cat-types [aria-pressed="true"]') || {}).dataset?.t || 'Expense';
+        const budget = Math.max(0, Math.round(Number(String(sh.querySelector('#cat-budget').value).replace(/[^0-9.]/g, '')) || 0));
+        if (!name) { err.textContent = 'Give the category a name.'; return f.focus(); }
+        const clash = catList().find(c => c.n.toLowerCase() === name.toLowerCase());
+        if (clash && !txnId) { err.textContent = `"${clash.n}" already exists.`; return; }
+        btn.disabled = true; btn.textContent = 'Saving…';
+        try {
+          let finalName = clash ? clash.n : name;
+          if (!clash) {
+            const data = await api({ action:'addcat', name, type, budget });
+            if (!(data.categories || []).some(c => c.n.toLowerCase() === name.toLowerCase()))
+              throw new Error("Your sheet needs the latest Code.gs to add categories from the app. Ask Risks to Reward for the update, or add it in the sheet's Categories tab.");
+            finalName = data.added || name;
+            S.data = data; if (!S.demo) store.set(LS.data, data);
+          }
+          if (txnId) return setCategory(txnId, finalName);
+          closeSheet(); render(); toast(`Added "${finalName}". Tap any spend to use it.`);
+        } catch (e) { btn.disabled = false; btn.textContent = txnId ? 'Create and use for this spend' : 'Create category'; err.textContent = e.message; }
+      });
+    });
+}
 function openSettings(){
   const d = S.data || {};
   openSheet(`
@@ -995,7 +1044,8 @@ function openSettings(){
     </dl>
     <button class="btn btn-primary btn-block" data-act="sync-close">Check Gmail now</button>
     <p class="muted" style="font-size:12.5px;margin:8px 0 18px">Your sheet also checks Gmail by itself every 6 hours. A manual check can take up to a few minutes.</p>
-    <button class="btn btn-ghost btn-block" data-act="install-help">Add to home screen</button>
+    <button class="btn btn-ghost btn-block" data-act="newcat">+ New category</button>
+    <button class="btn btn-ghost btn-block" style="margin-top:10px" data-act="install-help">Add to home screen</button>
     ${store.get(PW_KEY) ? '<button class="btn btn-ghost btn-block" style="margin-top:10px" data-act="forget-pw">Forget saved statement passwords</button>' : ''}
     <button class="btn btn-danger btn-block" style="margin-top:10px" data-act="disconnect">${S.demo ? 'Leave sample data' : 'Disconnect this phone'}</button>
     <p class="muted" style="font-size:12px;margin:18px 0 0">${esc(d.brand?.name || 'Risks to Reward')}. ${esc(d.brand?.tagline || '')}<br>Your data stays in your own Google account. This app has no server of its own. For budgeting and education only, not investment advice.</p>`);
@@ -1056,6 +1106,8 @@ document.addEventListener('click', e => {
   else if (a === 'more'){ S.listLimit += 80; render(); }
   else if (a === 'open') openTxn(b.dataset.id);
   else if (a === 'setcat') setCategory(b.dataset.id, b.dataset.cat);
+  else if (a === 'newcat') newCategory(b.dataset.id || '');
+  else if (a === 'ctype'){ b.parentElement.querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', x === b)); }
   else if (a === 'close-sheet') closeSheet();
   else if (a === 'find-stmts') findStatements();
   else if (a === 'stmt'){ const x = S.stmts[+b.dataset.i]; startStatement({ bank:x.bank, file:x.file, id:x.id, part:x.part }); }
@@ -1134,6 +1186,10 @@ function makeDemo(){
 }
 async function demoApi(params){
   await new Promise(r => setTimeout(r, 500));
+  if (params?.action === 'addcat'){
+    if (!S.data.categories.some(c => c.n.toLowerCase() === params.name.toLowerCase())) S.data.categories.push({ n:params.name, t:params.type, b:+params.budget || 0 });
+    return { ...S.data, added: params.name };
+  }
   if (params?.action === 'setcat'){
     const t = S.data.txns.find(x => x.id === params.id); let updated = 0;
     S.data.txns.forEach(x => { if (x !== t && x.m === t.m && x.c === 'Uncategorised'){ x.c = params.cat; updated++; } });
