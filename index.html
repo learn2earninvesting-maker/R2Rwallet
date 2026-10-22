@@ -648,8 +648,25 @@ function statementsSection(){
 
 /* =================== statements =================== */
 const PW_KEY = 'r2r.pw';
-function savedPw(bank){ return (store.get(PW_KEY) || {})[bank || 'any']; }
-function savePw(bank, pw){ const m = store.get(PW_KEY) || {}; m[bank || 'any'] = pw; store.set(PW_KEY, m); }
+// Several passwords per bank (e.g. savings and credit card). Stored as {bank: [newest first]}.
+function pwMap(){
+  const m = store.get(PW_KEY) || {};
+  Object.keys(m).forEach(k => { if (!Array.isArray(m[k])) m[k] = m[k] ? [String(m[k])] : []; }); // older single-password format
+  return m;
+}
+/** Passwords to try: this bank's first, then every other saved one (phone files don't name the bank). */
+function savedPws(bank){
+  const m = pwMap(), out = [];
+  const add = list => (list || []).forEach(p => { if (p && !out.includes(p)) out.push(p); });
+  add(m[bank || 'any']); add(m.any); Object.keys(m).forEach(k => add(m[k]));
+  return out;
+}
+function savePw(bank, pw){
+  if (!pw) return;
+  const m = pwMap(), k = bank || 'any';
+  m[k] = [pw, ...(m[k] || []).filter(p => p !== pw)].slice(0, 8);
+  store.set(PW_KEY, m);
+}
 let pdfjsReady = null;
 function loadPdfjs(){
   if (pdfjsReady) return pdfjsReady;
@@ -686,8 +703,18 @@ async function startStatement(src){
       const bin = atob(r.b64); const u = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
       src.bytes = u;
     }
-    await tryUnlock(src, savedPw(src.bank) || savedPw('any') || '', false);
+    // No password, then each saved password in turn; ask only if none of them opens it.
+    for (const pw of ['', ...savedPws(src.bank)]) {
+      const r = await openWith(src, pw);
+      if (r.ok) { if (pw) savePw(src.bank || 'any', pw); return showPreview(src, r.res); }
+      if (!r.needPw) { closeSheet(); return toast('That PDF could not be read. ' + r.msg); }
+    }
+    askPassword(src, false);
   } catch (e) { closeSheet(); toast(e.message || 'That PDF could not be read.'); }
+}
+async function openWith(src, pw){
+  try { return { ok: true, res: await window.R2RStatement.readStatement(window.pdfjsLib, src.bytes.slice(0), pw || undefined) }; }
+  catch (e) { return e && e.name === 'PasswordException' ? { ok: false, needPw: true } : { ok: false, msg: e && e.message ? e.message : '' }; }
 }
 async function tryUnlock(src, pw, fromPrompt){
   try {
@@ -707,7 +734,7 @@ function askPassword(src, wrong){
       <label class="sr" for="pw">Password</label>
       <input class="pw-field" id="pw" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="PDF password">
       <p class="err-text" role="alert">${wrong ? "That password didn't open the PDF. Check capitals and try again." : ''}</p>
-      <label class="check-row"><input type="checkbox" id="pw-remember" checked><span>Remember for ${esc(src.bank || 'this bank')} on this phone only</span></label>
+      <label class="check-row"><input type="checkbox" id="pw-remember" checked><span>Remember on this phone only (it's tried first next time; other saved passwords are kept)</span></label>
       <button class="btn btn-primary btn-block" type="submit">Unlock and read</button>
     </form>`, sh => {
       const f = sh.querySelector('#pw'); setTimeout(() => f.focus(), 300);
