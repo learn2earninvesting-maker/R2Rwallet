@@ -686,9 +686,11 @@ async function apiPost(body){
   if (!json.ok) throw new Error(json.error || 'Your sheet returned an error.');
   return json;
 }
+// PDFs banks send that are not account or card statements (TDS certificates, FAQs, terms, offers…)
+const NOT_STATEMENT_RE = /\b(tds|form[\s_-]*16a?|16a|interest[\s_-]*cert\w*|tax[\s_-]*(cert\w*|statement|deduct\w*)|26as|faq\w*|frequently[\s_-]*asked|terms|t\s*&\s*c|tnc|mitc|key[\s_-]*fact\w*|schedule[\s_-]*of[\s_-]*charges|tariff|brochure|newsletter|offer\w*|nominat\w*|kyc|policy|premium|annual[\s_-]*report|welcome[\s_-]*(kit|letter))\b/i;
 async function findStatements(){
   S.stmtsLoading = true; render();
-  try { const r = await api({ action:'stmts' }); S.stmts = r.statements || []; }
+  try { const r = await api({ action:'stmts' }); S.stmts = (r.statements || []).filter(x => !NOT_STATEMENT_RE.test((x.subject || '') + ' ' + (x.file || ''))); }
   catch (e) { toast(e.message); }
   finally { S.stmtsLoading = false; render(); }
 }
