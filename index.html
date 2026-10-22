@@ -245,7 +245,7 @@ input{font:inherit;color:inherit}
 <script>
 'use strict';
 /* =================== constants =================== */
-const LS = { conn:'r2r.conn', data:'r2r.data', demo:'r2r.demo' };
+const LS = { conn:'r2r.conn', data:'r2r.data', demo:'r2r.demo', done:'r2r.done' };
 const CAT_COLORS = {
   'Food & Dining':'#E2A03F','Groceries':'#6E9F48','Shopping':'#C2577A','Fuel':'#8C6A3F','Transport':'#3E7CB1',
   'Travel':'#2F9C95','Bills & Utilities':'#7A5BA8','Subscriptions & Entertainment':'#D16B3D','Health & Medical':'#C8484A',
@@ -642,7 +642,9 @@ function statementsSection(){
         <span class="acc-name">${esc(x.bank || 'Statement')}<span class="muted" style="font-weight:400">, ${new Date(x.date+'T00:00').toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'numeric'})}</span></span>
         <span class="status ${x.imported ? 'ok' : 'todo'}">${x.imported ? 'Added' : 'Read it'}</span>
         <span class="stmt-file">${esc(x.file)}</span>
-      </button>`).join('')}</div>` : `<p class="empty"><b>No statement PDFs found</b>Statements emailed in the last 13 months appear here. You can also open a PDF saved on this phone.</p>`) : ''}
+      </button>`).join('')}</div>${S.stmtsDone ? `<p class="muted" style="font-size:12.5px;margin:8px 2px 0">${S.stmtsDone} statement${S.stmtsDone === 1 ? '' : 's'} already added ${S.stmtsDone === 1 ? 'is' : 'are'} not shown.</p>` : ''}`
+      : S.stmtsDone ? `<p class="empty"><b>All caught up</b>All ${S.stmtsDone} statement${S.stmtsDone === 1 ? '' : 's'} found in Gmail ${S.stmtsDone === 1 ? 'is' : 'are'} already in your tracker. New ones appear here when the bank emails them.</p>`
+      : `<p class="empty"><b>No statement PDFs found</b>Statements emailed in the last 13 months appear here. You can also open a PDF saved on this phone.</p>`) : ''}
   </section>`;
 }
 
@@ -690,7 +692,14 @@ async function apiPost(body){
 const NOT_STATEMENT_RE = /\b(tds|form[\s_-]*16a?|16a|interest[\s_-]*cert\w*|tax[\s_-]*(cert\w*|statement|deduct\w*)|26as|faq\w*|frequently[\s_-]*asked|terms|t\s*&\s*c|tnc|mitc|key[\s_-]*fact\w*|schedule[\s_-]*of[\s_-]*charges|tariff|brochure|newsletter|offer\w*|nominat\w*|kyc|policy|premium|annual[\s_-]*report|welcome[\s_-]*(kit|letter))\b/i;
 async function findStatements(){
   S.stmtsLoading = true; render();
-  try { const r = await api({ action:'stmts' }); S.stmts = (r.statements || []).filter(x => !NOT_STATEMENT_RE.test((x.subject || '') + ' ' + (x.file || ''))); }
+  try {
+    const r = await api({ action:'stmts' });
+    const done = new Set(store.get(LS.done) || []);
+    const all = (r.statements || []).filter(x => !NOT_STATEMENT_RE.test((x.subject || '') + ' ' + (x.file || '')));
+    // Show only statements not yet added (the sheet's record, plus this phone's own record).
+    S.stmts = all.filter(x => !x.imported && !done.has(x.id + ':' + x.part));
+    S.stmtsDone = all.length - S.stmts.length;
+  }
   catch (e) { toast(e.message); }
   finally { S.stmtsLoading = false; render(); }
 }
@@ -789,7 +798,11 @@ async function importPending(){
     }
     out = Object.assign({}, out, { added, skipped, already: already === secs.length });
     S.data = out; if (!S.demo) store.set(LS.data, out);
-    if (S.stmts && src.id) S.stmts.forEach(x => { if (x.id === src.id && x.part === src.part) x.imported = true; });
+    if (src.id) {
+      const key = src.id + ':' + src.part, done = store.get(LS.done) || [];
+      if (!done.includes(key)) store.set(LS.done, [key, ...done].slice(0, 500));
+      if (S.stmts) { const before = S.stmts.length; S.stmts = S.stmts.filter(x => !(x.id === src.id && x.part === src.part)); S.stmtsDone = (S.stmtsDone || 0) + (before - S.stmts.length); }
+    }
     S.pending = null; closeSheet(); render();
     toast(out.already ? 'This statement was already added.' : `Added ${out.added}. ${out.skipped ? out.skipped + ' were already there from alerts.' : ''}`);
   } catch (e) { if (btn){ btn.disabled = false; btn.textContent = 'Add to my tracker'; } toast(e.message); }
@@ -930,7 +943,7 @@ document.addEventListener('click', e => {
   else if (a === 'demo'){ S.demo = true; store.set(LS.demo, true); S.data = makeDemo(); S._grown = false; render(); }
   else if (a === 'leave-demo' || a === 'disconnect'){
     if (a === 'disconnect' && !S.demo && !confirm('Disconnect this phone? You can reconnect any time with your code.')) return;
-    closeSheet(true); S.demo = false; S.conn = null; S.data = null; store.del(LS.conn); store.del(LS.data); store.del(LS.demo); if (a === 'disconnect') store.del(PW_KEY); S.stmts = null; render();
+    closeSheet(true); S.demo = false; S.conn = null; S.data = null; store.del(LS.conn); store.del(LS.data); store.del(LS.demo); store.del(LS.done); if (a === 'disconnect') store.del(PW_KEY); S.stmts = null; render();
   }
 });
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closeSheet(); });
