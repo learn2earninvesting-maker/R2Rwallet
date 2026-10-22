@@ -116,6 +116,7 @@ input{font:inherit;color:inherit}
 .grid-2{display:block}
 @media (min-width:900px){
   .grid-2{display:grid;grid-template-columns:1.1fr .9fr;gap:36px;align-items:start}
+  .grid-2 > div{min-width:0}
   .grid-2 > .col-b > .section:first-child{margin-top:0}
   .tabs{top:0;bottom:auto;border-top:0;border-bottom:1px solid var(--line);padding-bottom:0}
   .tabs-inner{max-width:560px;height:56px}
@@ -150,6 +151,30 @@ input{font:inherit;color:inherit}
 .legend span{display:inline-flex;align-items:center;gap:6px}
 .chart{width:100%;height:auto;display:block}
 .chart text{font-family:var(--body);font-size:11px;fill:var(--ink-soft)}
+/* ---------- insights ---------- */
+.span-chips{padding-top:2px}
+.insights{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:0}
+.insight{background:var(--paper);border:1px solid var(--line);border-radius:14px;padding:12px 13px;border-top:4px solid var(--line)}
+.insight.warm{border-top-color:var(--marigold)} .insight.cool{border-top-color:var(--teal)} .insight.alert{border-top-color:var(--brick)}
+.insight dt{font-size:12px;color:var(--ink-soft);font-weight:500}
+.insight dd{margin:3px 0 2px;font-family:var(--display);font-size:19px;font-weight:650;font-variation-settings:'wdth' 90;line-height:1.15;overflow-wrap:anywhere}
+.insight p{margin:0;font-size:12.5px;color:var(--ink-2);line-height:1.35}
+.donut-wrap{display:flex;gap:16px;align-items:center;flex-wrap:wrap}
+.donut{width:168px;height:168px;flex:none}
+.donut text{font-size:11px;fill:var(--ink-soft)}
+.donut .donut-total{font-size:20px;font-weight:700;fill:var(--ink)}
+.donut-key{list-style:none;margin:0;padding:0;flex:1;min-width:170px}
+.donut-key li{display:grid;grid-template-columns:auto 1fr auto;gap:2px 8px;align-items:center;padding:5px 0;border-bottom:1px solid var(--line);font-size:13.5px}
+.donut-key li .money{grid-column:2 / 4;font-size:12px}
+.donut-key b{font-weight:650}
+.merchants{list-style:none;margin:0;padding:0}
+.merchants li{display:grid;grid-template-columns:1fr auto;gap:4px 10px;padding:9px 0;border-bottom:1px solid var(--line);font-size:14px}
+.m-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.m-bar{grid-column:1 / 3;height:6px;background:var(--mist-2);border-radius:3px;overflow:hidden}
+.m-bar i{display:block;height:100%;background:var(--marigold);border-radius:3px}
+.chart .flag{font-size:10.5px;font-weight:700}
+.chart .flag.hi{fill:var(--brick)} .chart .flag.lo{fill:var(--teal)}
+@media (max-width:360px){ .insights{grid-template-columns:1fr} }
 .kv{display:grid;grid-template-columns:1fr 1fr;border-top:1px solid var(--line)}
 .kv div{padding:12px 0;border-bottom:1px solid var(--line)}
 .kv div:nth-child(odd){padding-right:12px}
@@ -518,35 +543,95 @@ function viewSpends(el){
 }
 
 /* =================== view: trends =================== */
+const monthLabel = k => monthName(k, true) + ' ' + k.slice(2, 4);
 function viewTrends(el){
+  const span = [3, 6, 12].includes(S.trendSpan) ? S.trendSpan : 12;
   const months = []; const now = monthKey(new Date());
-  for (let i = 11; i >= 0; i--) months.push(shiftMonth(now, -i));
-  const rows = months.map(k => ({ k, ...summarize(k) }));
+  for (let i = span - 1; i >= 0; i--) months.push(shiftMonth(now, -i));
+  const rows = months.map(k => ({ k, ...summarize(k) })).map(r => ({ ...r, saved: r.income - r.spent }));
   const types = typeMap();
   const expenseCats = [...new Set((S.data?.txns||[]).filter(t => (types[t.c]||'Expense')==='Expense').map(t => t.c))]
     .filter(c => c !== 'Uncategorised').sort();
   if (!S.trendCat || !expenseCats.includes(S.trendCat)) S.trendCat = expenseCats[0] || null;
+
+  // Highlights use complete months that have data (the current month is still running).
   const withData = rows.filter(r => r.spent > 0 || r.income > 0);
   const full = withData.filter(r => r.k !== now);
+  const pick = (list, f) => list.length ? list.reduce((a, r) => f(r, a) ? r : a) : null;
   const avgSpent = full.length ? full.reduce((a,r)=>a+r.spent,0) / full.length : 0;
   const avgIncome = full.length ? full.reduce((a,r)=>a+r.income,0) / full.length : 0;
-  const best = full.length ? full.reduce((a,r) => (r.income - r.spent) > (a.income - a.spent) ? r : a) : null;
+  const withSpend = full.filter(r => r.spent > 0);
+  const high = pick(withSpend, (r, a) => r.spent > a.spent);
+  const low = pick(withSpend, (r, a) => r.spent < a.spent);
+  const withIncome = full.filter(r => r.income > 0);
+  const mostSaved = pick(withIncome, (r, a) => r.saved > a.saved);
+  const leastSaved = pick(withIncome, (r, a) => r.saved < a.saved);
+  const totIn = withIncome.reduce((a,r)=>a+r.income,0), totSavedIn = withIncome.reduce((a,r)=>a+r.saved,0);
+  const avgRate = totIn > 0 ? totSavedIn / totIn : null;
   const totalInv = rows.reduce((a,r)=>a+r.invested,0);
 
+  // Across the whole period (including this month so far)
+  const periodTx = (S.data?.txns || []).filter(t => months.includes(t.d.slice(0,7)) && (types[t.c]||'Expense') === 'Expense');
+  const byCat = {}, byMerchant = {};
+  periodTx.forEach(t => {
+    const v = (t.dir === 'D' ? 1 : -1) * t.a;
+    byCat[t.c] = (byCat[t.c] || 0) + v;
+    if (t.c !== 'Cash Withdrawal') byMerchant[pretty(t.m)] = (byMerchant[pretty(t.m)] || 0) + v;
+  });
+  const cats = Object.entries(byCat).filter(([,v]) => v > 0.5).sort((a,b) => b[1]-a[1]);
+  const catTotal = cats.reduce((a,[,v]) => a + v, 0);
+  const merchants = Object.entries(byMerchant).filter(([,v]) => v > 0.5).sort((a,b) => b[1]-a[1]).slice(0, 5);
+  const biggest = periodTx.filter(t => t.dir === 'D').reduce((a, t) => (!a || t.a > a.a) ? t : a, null);
+  const pct = v => (v >= 0 ? '' : '−') + Math.round(Math.abs(v) * 100) + '%';
+  const vsAvg = r => avgSpent > 0 ? Math.round((r.spent - avgSpent) / avgSpent * 100) : 0;
+
+  const tile = (label, value, note, tone) => `<div class="insight ${tone || ''}"><dt>${label}</dt><dd>${value}</dd>${note ? `<p>${note}</p>` : ''}</div>`;
+  const tiles = full.length ? [
+    high && tile('Highest spending', monthLabel(high.k), `${rupee(high.spent)}${vsAvg(high) > 0 ? ` · ${vsAvg(high)}% above average` : ''}`, 'warm'),
+    low && tile('Lowest spending', monthLabel(low.k), `${rupee(low.spent)}${vsAvg(low) < 0 ? ` · ${-vsAvg(low)}% below average` : ''}`, 'cool'),
+    mostSaved && tile('Saved the most', monthLabel(mostSaved.k), `${rupee(mostSaved.saved)} kept · ${pct(mostSaved.saved / mostSaved.income)} of income`, 'cool'),
+    leastSaved && leastSaved !== mostSaved && tile(leastSaved.saved < 0 ? 'Spent more than earned' : 'Saved the least', monthLabel(leastSaved.k),
+      leastSaved.saved < 0 ? `${rupee(-leastSaved.saved)} more out than in` : `${rupee(leastSaved.saved)} kept · ${pct(leastSaved.saved / leastSaved.income)}`, leastSaved.saved < 0 ? 'alert' : ''),
+    biggest && tile('Biggest single spend', rupee(biggest.a), `${esc(pretty(biggest.m))} · ${new Date(biggest.d).toLocaleDateString('en-IN',{day:'numeric',month:'short'})}`),
+    cats[0] && tile('Top category', esc(cats[0][0]), `${rupee(cats[0][1])} · ${Math.round(cats[0][1] / catTotal * 100)}% of spending`),
+  ].filter(Boolean).join('') : '';
+
   el.innerHTML = `
+  <div class="chips span-chips" role="group" aria-label="Period">
+    ${[3,6,12].map(n => `<button class="chip" data-act="tspan" data-n="${n}" aria-pressed="${span===n}">Last ${n} months</button>`).join('')}
+  </div>
   <div class="grid-2"><div class="col-a">
-    <section class="section" style="margin-top:4px">
+    ${tiles ? `<section class="section" style="margin-top:10px">
+      <h2>Highlights</h2>
+      <p class="sub">Based on ${full.length} complete month${full.length===1?'':'s'}; ${monthName(now)} is still running.</p>
+      <dl class="insights">${tiles}</dl>
+    </section>` : `<section class="section" style="margin-top:10px"><h2>Highlights</h2><p class="empty">Highlights appear once a full month of data is in your tracker.</p></section>`}
+    <section class="section">
       <h2>Spent and earned</h2>
       <div class="legend"><span><i class="dot" style="background:var(--marigold)"></i>Spent</span><span><i class="dot" style="background:var(--teal)"></i>Income</span></div>
-      ${pairChart(rows)}
+      ${pairChart(rows, high && high.k, low && low.k)}
+    </section>
+    <section class="section">
+      <h2>Money kept each month</h2>
+      <p class="sub">Income minus spending; the outlined bar is your best month and the pale bar is ${monthName(now)} so far. ${avgRate !== null ? `On average you kept <b>${pct(avgRate)}</b> of what you earned.` : ''}</p>
+      ${savedChart(rows, mostSaved && mostSaved.k)}
     </section>
     <dl class="kv section">
       <div><dt>Average monthly spend</dt><dd class="money">${rupee(avgSpent)}</dd></div>
       <div><dt>Average monthly income</dt><dd class="money">${rupee(avgIncome)}</dd></div>
-      <div><dt>Best month for saving</dt><dd>${best ? monthName(best.k, true) + ' ' + best.k.slice(2,4) : '—'}</dd></div>
-      <div><dt>Invested in 12 months</dt><dd class="money">${rupee(totalInv)}</dd></div>
+      <div><dt>Spent in ${span} months</dt><dd class="money">${rupee(catTotal)}</dd></div>
+      <div><dt>Invested in ${span} months</dt><dd class="money">${rupee(totalInv)}</dd></div>
     </dl>
   </div><div class="col-b">
+    <section class="section">
+      <h2>Where the money went</h2>
+      <p class="sub">Spending by category, last ${span} months.</p>
+      ${cats.length ? donutChart(cats, catTotal) : '<p class="empty">No spending recorded in this period.</p>'}
+    </section>
+    ${merchants.length ? `<section class="section">
+      <h2>Top places you paid</h2>
+      <ol class="merchants">${merchants.map(([m, v]) => `<li><span class="m-name">${esc(m)}</span><span class="money">${rupee(v)}</span><span class="m-bar"><i style="width:${Math.max(3, v / merchants[0][1] * 100)}%"></i></span></li>`).join('')}</ol>
+    </section>` : ''}
     <section class="section">
       <h2>One category over time</h2>
       <div class="chips" role="group" aria-label="Choose a category">
@@ -556,9 +641,45 @@ function viewTrends(el){
     </section>
   </div></div>`;
 }
+function donutChart(cats, total){
+  const top = cats.slice(0, 6); const rest = cats.slice(6).reduce((a,[,v]) => a + v, 0);
+  const parts = rest > 0.5 ? [...top, ['Everything else', rest]] : top;
+  const R = 70, r = 46, C = 90; let a0 = -Math.PI / 2, g = '';
+  const pt = (rad, a) => [C + rad * Math.cos(a), C + rad * Math.sin(a)].map(n => n.toFixed(2)).join(',');
+  parts.forEach(([name, v]) => {
+    const frac = v / total; const col = name === 'Everything else' ? '#B8C4BE' : catColor(name);
+    if (frac >= 0.9999) { g += `<circle cx="${C}" cy="${C}" r="${(R + r) / 2}" fill="none" stroke="${col}" stroke-width="${R - r}"><title>${esc(name)}: ${rupee(v)}</title></circle>`; return; }
+    const a1 = a0 + frac * 2 * Math.PI, big = frac > 0.5 ? 1 : 0;
+    g += `<path d="M${pt(R,a0)} A${R},${R} 0 ${big} 1 ${pt(R,a1)} L${pt(r,a1)} A${r},${r} 0 ${big} 0 ${pt(r,a0)}Z" fill="${col}" stroke="#fff" stroke-width="1.5"><title>${esc(name)}: ${rupee(v)} (${Math.round(frac*100)}%)</title></path>`;
+    a0 = a1;
+  });
+  g += `<text x="${C}" y="${C - 3}" text-anchor="middle" class="donut-total">${shortRs(total)}</text><text x="${C}" y="${C + 14}" text-anchor="middle">spent</text>`;
+  return `<div class="donut-wrap"><svg class="donut" viewBox="0 0 180 180" role="img" aria-label="Spending by category">${g}</svg>
+    <ul class="donut-key">${parts.map(([name, v]) => `<li><i class="dot" style="background:${name === 'Everything else' ? '#B8C4BE' : catColor(name)}"></i><span>${esc(name)}</span><b>${Math.round(v / total * 100)}%</b><span class="muted money">${rupee(v)}</span></li>`).join('')}</ul></div>`;
+}
+function savedChart(rows, bestK){
+  const W = 520, H = 200, L = 44, B = 26, T = 12; const iw = W - L - 6, ih = H - B - T;
+  const maxPos = Math.max(0, ...rows.map(r => r.saved)), maxNeg = Math.max(0, ...rows.map(r => -r.saved));
+  const top = niceMax(maxPos || (maxNeg ? maxNeg / 3 : 1000)), bottom = maxNeg ? niceMax(maxNeg) : 0;
+  const y = v => T + (top - v) / (top + bottom) * ih; const y0 = y(0);
+  const step = iw / rows.length, bw = Math.min(22, step * .55);
+  let g = '';
+  [top, 0, bottom ? -bottom : null].filter(v => v !== null).forEach(v => { const yy = y(v);
+    g += `<line x1="${L}" x2="${W-4}" y1="${yy}" y2="${yy}" stroke="${v === 0 ? '#9AA9A2' : '#D3DCD7'}" stroke-width="1"/><text x="${L-6}" y="${yy+4}" text-anchor="end">${v < 0 ? '−' : ''}${shortRs(Math.abs(v))}</text>`; });
+  rows.forEach((r, i) => {
+    const cx = L + step * i + step / 2; const has = r.income > 0 || r.spent > 0;
+    if (has) {
+      const yy = y(r.saved), h = Math.abs(yy - y0);
+      g += `<rect x="${cx - bw/2}" y="${Math.min(yy, y0)}" width="${bw}" height="${Math.max(1.5, h)}" rx="2.5" fill="${r.saved >= 0 ? '#0E7469' : '#B5452B'}"${r.k === monthKey(new Date()) ? ' fill-opacity=".35"' : ''}${r.k === bestK ? ' stroke="#13283F" stroke-width="2"' : ''}><title>${monthName(r.k)}${r.k === monthKey(new Date()) ? ' so far' : ''}: ${r.saved >= 0 ? 'kept' : 'overspent by'} ${rupee(r.saved)}${r.income > 0 ? ' (' + Math.round(r.saved / r.income * 100) + '% of income)' : ''}</title></rect>`;
+      if (r.income > 0 && rows.length <= 6) g += `<text x="${cx}" y="${r.saved >= 0 ? Math.min(yy, y0) - 4 : Math.max(yy, y0) + 12}" text-anchor="middle">${Math.round(r.saved / r.income * 100)}%</text>`;
+    }
+    g += `<text x="${cx}" y="${H-8}" text-anchor="middle">${rows.length <= 6 ? monthName(r.k, true) : monthName(r.k, true).slice(0,1)}</text>`;
+  });
+  return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Money kept each month">${g}</svg>`;
+}
 function niceMax(v){ if (v <= 0) return 1000; const p = Math.pow(10, Math.floor(Math.log10(v))); return Math.ceil(v / p * 2) / 2 * p; }
 function shortRs(v){ return v >= 100000 ? '₹' + (v/100000).toFixed(v>=1000000?0:1).replace(/\.0$/,'') + 'L' : v >= 1000 ? '₹' + Math.round(v/1000) + 'k' : '₹' + Math.round(v); }
-function pairChart(rows){
+function pairChart(rows, highK, lowK){
   const W = 520, H = 230, L = 44, B = 26, T = 8; const iw = W - L - 6, ih = H - B - T;
   const max = niceMax(Math.max(...rows.map(r => Math.max(r.spent, r.income))));
   const step = iw / rows.length, bw = Math.min(14, step * .32);
@@ -569,9 +690,10 @@ function pairChart(rows){
     const cx = L + step*i + step/2;
     g += `<rect x="${cx-bw-1}" y="${y(r.spent)}" width="${bw}" height="${T+ih-y(r.spent)}" rx="2.5" fill="#E2A03F"><title>${monthName(r.k)}: spent ${rupee(r.spent)}</title></rect>`;
     g += `<rect x="${cx+1}" y="${y(r.income)}" width="${bw}" height="${T+ih-y(r.income)}" rx="2.5" fill="#0E7469"><title>${monthName(r.k)}: income ${rupee(r.income)}</title></rect>`;
-    g += `<text x="${cx}" y="${H-8}" text-anchor="middle">${monthName(r.k,true).slice(0,1)}</text>`;
+    g += `<text x="${cx}" y="${H-8}" text-anchor="middle">${rows.length <= 6 ? monthName(r.k,true) : monthName(r.k,true).slice(0,1)}</text>`;
+    if (r.k === highK || r.k === lowK) g += `<text x="${cx-bw/2-1}" y="${y(r.spent)-5}" text-anchor="middle" class="flag ${r.k === highK ? 'hi' : 'lo'}">${r.k === highK ? 'High' : 'Low'}</text>`;
   });
-  return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Monthly spending and income, last 12 months">${g}</svg>`;
+  return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Monthly spending and income">${g}</svg>`;
 }
 function catChart(months, cat){
   const types = typeMap();
@@ -930,6 +1052,7 @@ document.addEventListener('click', e => {
   else if (a === 'filter'){ S.filterCat = b.dataset.cat; S.query = ''; S.view = 'spends'; window.scrollTo(0,0); render(); }
   else if (a === 'chip'){ S.filterCat = b.dataset.cat || null; S.listLimit = 80; render(); }
   else if (a === 'tcat'){ S.trendCat = b.dataset.cat; render(); }
+  else if (a === 'tspan'){ S.trendSpan = +b.dataset.n; render(); }
   else if (a === 'more'){ S.listLimit += 80; render(); }
   else if (a === 'open') openTxn(b.dataset.id);
   else if (a === 'setcat') setCategory(b.dataset.id, b.dataset.cat);
