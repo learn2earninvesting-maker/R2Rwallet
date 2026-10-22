@@ -717,19 +717,29 @@ function askPassword(src, wrong){
     });
 }
 function showPreview(src, res){
+  if (!res.rows.length && (res.lineCount || 0) < 10){
+    openSheet(`<h3>This PDF is a picture, not text</h3><p class="muted">The pages are scanned or saved as images, so there is no text to read. Use the original statement PDF from the bank's email or net banking (the password-protected one), not a printed, scanned or "unlocked" copy.</p>
+      <button class="btn btn-ghost btn-block" data-act="close-sheet">Close</button>`);
+    return;
+  }
   if (!res.rows.length){
     openSheet(`<h3>No transactions found</h3><p class="muted">The PDF opened, but its layout wasn't recognised. Send this statement's bank name to Risks to Reward so support can be added.</p>
       <button class="btn btn-ghost btn-block" data-act="close-sheet">Close</button>`);
     return;
   }
   src.result = res; S.pending = src;
-  const label = (src.bank || 'Statement') + (res.last4 ? ' ••' + res.last4 : '');
-  const check = res.check === 'balanced' ? `<div class="callout ok">Totals check out: opening balance plus money in, minus money out, equals the closing balance on the statement.</div>`
-    : res.check === 'mismatch' ? `<div class="callout warn">Some lines may have been missed: the totals don't add up to the closing balance. Review the list before adding.</div>` : '';
+  const secs = (res.sections && res.sections.length) ? res.sections : [{ last4: res.last4, rows: res.rows, check: res.check, debits: res.debits, credits: res.credits }];
+  const multi = secs.length > 1;
+  const label = (src.bank || 'Statement') + (!multi && secs[0].last4 ? ' ••' + secs[0].last4 : '');
+  const checkNote = (c, who) => c === 'balanced' ? `<div class="callout ok">${who}Totals check out: opening balance plus money in, minus money out, equals the closing balance on the statement.</div>`
+    : c === 'mismatch' ? `<div class="callout warn">${who}Some lines may have been missed: the totals don't add up to the closing balance. Review the list before adding.</div>` : '';
+  const list = rows => `<ul class="preview-list">${rows.map(r => `<li><span><span class="d">${new Date(r.d+'T00:00').toLocaleDateString('en-IN',{day:'numeric',month:'short'})}</span>${esc(pretty(r.m))}</span><span class="money ${r.dir==='C'?'in':''}">${r.dir==='C'?'+':''}${rupee(r.a, true)}</span></li>`).join('')}</ul>`;
+  const body = multi
+    ? secs.map(sc => `<p style="font-weight:600;margin:14px 0 4px">Account ••${esc(sc.last4)} <span class="muted" style="font-weight:400">· ${sc.rows.length} entries, ${rupee(sc.debits)} out, ${rupee(sc.credits)} in</span></p>${checkNote(sc.check, '')}${list(sc.rows)}`).join('')
+    : checkNote(secs[0].check, '') + list(res.rows);
   openSheet(`<h3>${esc(label)}</h3>
-    <p class="muted" style="margin:4px 0 12px">${res.rows.length} transactions found, ${rupee(res.debits)} out and ${rupee(res.credits)} in.</p>
-    ${check}
-    <ul class="preview-list">${res.rows.map(r => `<li><span><span class="d">${new Date(r.d+'T00:00').toLocaleDateString('en-IN',{day:'numeric',month:'short'})}</span>${esc(pretty(r.m))}</span><span class="money ${r.dir==='C'?'in':''}">${r.dir==='C'?'+':''}${rupee(r.a, true)}</span></li>`).join('')}</ul>
+    <p class="muted" style="margin:4px 0 12px">${res.rows.length} transactions found${multi ? ' in ' + secs.length + ' accounts' : ''}, ${rupee(res.debits)} out and ${rupee(res.credits)} in.</p>
+    ${body}
     <button class="btn btn-primary btn-block" data-act="import-stmt">Add to my tracker</button>
     <p class="muted" style="font-size:12.5px;margin:8px 0 0">Spends already recorded from alerts are skipped, so nothing is counted twice.</p>`);
 }
@@ -737,8 +747,18 @@ async function importPending(){
   const src = S.pending; if (!src) return;
   const btn = document.querySelector('[data-act="import-stmt"]'); if (btn){ btn.disabled = true; btn.textContent = 'Adding…'; }
   try {
-    const out = await apiPost({ action:'addtxns', id:src.id || '', part:src.part || '', file:src.file || '', bank:src.bank || '',
-      last4:src.result.last4, kind:src.result.kind, head:'', rows:src.result.rows });
+    const res = src.result;
+    const secs = (res.sections && res.sections.length) ? res.sections : [{ last4: res.last4, rows: res.rows }];
+    const multi = secs.length > 1;
+    let out = null, added = 0, skipped = 0, already = 0;
+    // One request per account, so each account's entries are filed under its own number.
+    for (const sc of secs) {
+      out = await apiPost({ action:'addtxns', id:src.id || '', part:(src.part || '') + (multi && src.id ? '#' + sc.last4 : ''),
+        file:(src.file || '') + (multi && !src.id ? ' (••' + sc.last4 + ')' : ''), bank:src.bank || '',
+        last4:sc.last4, kind:res.kind, head:'', rows:sc.rows.map(r => ({ d:r.d, m:r.m, raw:r.raw, a:r.a, dir:r.dir })) });
+      added += out.added || 0; skipped += out.skipped || 0; if (out.already) already++;
+    }
+    out = Object.assign({}, out, { added, skipped, already: already === secs.length });
     S.data = out; if (!S.demo) store.set(LS.data, out);
     if (S.stmts && src.id) S.stmts.forEach(x => { if (x.id === src.id && x.part === src.part) x.imported = true; });
     S.pending = null; closeSheet(); render();
