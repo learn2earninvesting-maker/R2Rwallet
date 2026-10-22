@@ -518,7 +518,9 @@ function viewSpends(el){
   const cats = [...new Set(all.map(t => t.c))].sort();
   const q = S.query.trim().toLowerCase();
   const list = all.filter(t => (!S.filterCat || t.c === S.filterCat) && (!q || (t.m + ' ' + t.c + ' ' + t.acc).toLowerCase().includes(q)));
-  const unc = all.filter(t => t.c === 'Uncategorised').length;
+  const uncAll = (S.data?.txns || []).filter(t => t.c === 'Uncategorised');
+  const unc = uncAll.length;
+  if (S.filterCat === 'Uncategorised' && !q) return viewSortPlaces(el, uncAll);
   const shown = list.slice(0, S.listLimit);
   const groups = [];
   shown.forEach(t => { const d = t.d.slice(0,10); let g = groups[groups.length-1]; if (!g || g.d !== d){ g = { d, items:[] }; groups.push(g); } g.items.push(t); });
@@ -547,6 +549,38 @@ function viewSpends(el){
     ${list.length > S.listLimit ? `<button class="more" data-act="more">Show ${Math.min(80, list.length - S.listLimit)} more</button>` : ''}`;
   const qi = document.getElementById('q');
   qi.addEventListener('input', e => { S.query = e.target.value; S.listLimit = 80; const pos = e.target.selectionStart; viewSpends(el); const n = document.getElementById('q'); n.focus(); n.setSelectionRange(pos,pos); });
+}
+
+/** "Needs a category": one row per place, across all months. Picking a category once sorts all of that place's spends. */
+function viewSortPlaces(el, uncAll){
+  const by = {};
+  uncAll.forEach(t => { const k = pretty(t.m); const g = by[k] = by[k] || { m:k, n:0, a:0, last:t }; g.n++; g.a += t.a; if (t.d > g.last.d) g.last = t; });
+  const groups = Object.values(by).sort((a,b) => b.a - a.a);
+  el.innerHTML = `
+    <div class="chips" role="group" aria-label="Filter by category">
+      <button class="chip" data-act="chip" data-cat="" aria-pressed="false">All</button>
+      <button class="chip" data-act="chip" data-cat="Uncategorised" aria-pressed="true"><i class="dot" style="background:var(--brick)"></i>Needs a category (${uncAll.length})</button>
+    </div>
+    ${groups.length ? `<section class="section" style="margin-top:12px">
+      <h2>Sort by place</h2>
+      <p class="sub">${uncAll.length} spend${uncAll.length===1?'':'s'} at ${groups.length} place${groups.length===1?'':'s'}. Pick a category once per place; all its spends move, and future ones are sorted automatically.</p>
+      <button class="btn btn-ghost btn-block" data-act="recat" style="margin-bottom:12px">Try automatic sorting again</button>
+      ${groups.map(g => `<button class="txn" data-act="open" data-id="${esc(g.last.id)}">
+          <span class="badge" style="background:var(--brick)" aria-hidden="true">${esc(initials(g.m))}</span>
+          <span class="txn-m">${esc(g.m)}</span>
+          <span class="txn-a money">${rupee(g.a)}</span>
+          <span class="txn-c"><span class="unc">Pick a category</span>, ${g.n} spend${g.n===1?'':'s'}${g.n > 1 ? '' : ', ' + new Date(g.last.d).toLocaleDateString('en-IN',{day:'numeric',month:'short'})}</span>
+        </button>`).join('')}
+    </section>` : `<p class="empty"><b>All sorted</b>Every spend has a category.</p>`}`;
+}
+async function autoSort(){
+  toast('Sorting…');
+  try {
+    const data = await api({ action:'recat' });
+    if (typeof data.recategorised !== 'number') throw new Error("Your sheet needs the latest Code.gs for automatic sorting. Ask Risks to Reward for the update.");
+    S.data = data; if (!S.demo) store.set(LS.data, data); render();
+    toast(data.recategorised ? `Sorted ${data.recategorised} spend${data.recategorised===1?'':'s'} automatically.` : 'Nothing more could be sorted automatically. Pick these once per place.');
+  } catch (e) { toast(e.message); }
 }
 
 /* =================== view: trends =================== */
@@ -922,7 +956,7 @@ async function importPending(){
     for (const sc of secs) {
       out = await apiPost({ action:'addtxns', id:src.id || '', part:(src.part || '') + (multi && src.id ? '#' + sc.last4 : ''),
         file:(src.file || '') + (multi && !src.id ? ' (••' + sc.last4 + ')' : ''), bank:src.bank || '',
-        last4:sc.last4, kind:res.kind, head:'', rows:sc.rows.map(r => ({ d:r.d, m:r.m, raw:r.raw, a:r.a, dir:r.dir })) });
+        last4:sc.last4, kind:res.kind, head:'', holder:res.holder || '', rows:sc.rows.map(r => ({ d:r.d, m:r.m, raw:r.raw, a:r.a, dir:r.dir })) });
       added += out.added || 0; skipped += out.skipped || 0; if (out.already) already++;
     }
     out = Object.assign({}, out, { added, skipped, already: already === secs.length });
@@ -1107,6 +1141,7 @@ document.addEventListener('click', e => {
   else if (a === 'open') openTxn(b.dataset.id);
   else if (a === 'setcat') setCategory(b.dataset.id, b.dataset.cat);
   else if (a === 'newcat') newCategory(b.dataset.id || '');
+  else if (a === 'recat') autoSort();
   else if (a === 'ctype'){ b.parentElement.querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', x === b)); }
   else if (a === 'close-sheet') closeSheet();
   else if (a === 'find-stmts') findStatements();
@@ -1186,6 +1221,7 @@ function makeDemo(){
 }
 async function demoApi(params){
   await new Promise(r => setTimeout(r, 500));
+  if (params?.action === 'recat') return { ...S.data, recategorised: 0 };
   if (params?.action === 'addcat'){
     if (!S.data.categories.some(c => c.n.toLowerCase() === params.name.toLowerCase())) S.data.categories.push({ n:params.name, t:params.type, b:+params.budget || 0 });
     return { ...S.data, added: params.name };

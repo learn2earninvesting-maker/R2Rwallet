@@ -244,7 +244,13 @@
 
     const checks = secOut.map(s => s.check);
     const check = checks.includes('mismatch') ? 'mismatch' : (checks.length && checks.every(c => c === 'balanced')) ? 'balanced' : 'unknown';
-    return { kind, last4: (secOut[0] && secOut[0].last4) || docLast4, rows, sections: secOut, skipped, check,
+    // Account holder's name (e.g. "MR.MANUEL LAWRENCE PINTO"), so transfers to your own accounts can be recognised.
+    let holder = '';
+    for (const l of lines.slice(0, 40)) {
+      const h = /^\s*(?:mr|mrs|ms|miss|dr|smt|shri)\.?\s*([a-z][a-z .]{4,60}?)\s*$/i.exec(l);
+      if (h && h[1].trim().split(/\s+/).length >= 2) { holder = h[1].replace(/\s+/g, ' ').trim(); break; }
+    }
+    return { kind, holder, last4: (secOut[0] && secOut[0].last4) || docLast4, rows, sections: secOut, skipped, check,
       opening: secOut[0] ? secOut[0].opening : null, closing: secOut[0] ? secOut[0].closing : null,
       debits: sum(rows, 'D'), credits: sum(rows, 'C') };
   }
